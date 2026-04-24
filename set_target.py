@@ -19,8 +19,8 @@ class TargetSetter:
         
         h, w = self.map_image.shape[:2]
         
-        if w > 1200:
-            scale = 1200 / w
+        if w > 900:
+            scale = 900 / w
             self.display_image = cv2.resize(self.map_image, (int(w * scale), int(h * scale)))
             self.scale_factor = scale
         else:

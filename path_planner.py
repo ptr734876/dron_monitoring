@@ -33,7 +33,7 @@ class PathPlanner:
             return 0.0
         dx = self.target_x - self.current_x
         dy = self.target_y - self.current_y
-        return math.degrees(math.atan2(dy, dx))
+        return -math.degrees(math.atan2(dy, dx))
     
     def need_replan(self, current_x, current_y):
         if self.last_update_x is None or self.last_update_y is None:
@@ -61,10 +61,10 @@ class PathPlanner:
             'current_y': current_y,
             'angle': angle,
             'distance': distance,
-            'command': self._get_flight_command(angle, distance)
+            'command': self.get_flight_command(angle, distance)
         }
     
-    def _get_flight_command(self, angle, distance):
+    def get_flight_command(self, angle, distance):
         if distance < 5.0:
             return "HOVER"
         

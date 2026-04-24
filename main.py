@@ -1,16 +1,10 @@
-# main_navigation.py
+# main.py
 from locator import DroneLocator
 from set_target import TargetSetter
+from path_planner import PathPlanner
 import cv2
-import math
-import os
 import sys
 import config
-
-
-def distance_pixels(x1, y1, x2, y2):
-    return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-
 
 def main():
     map_num = ""
@@ -50,20 +44,25 @@ def main():
     else:
         print("Target not set")
         return
-    
-    dist_pixels = distance_pixels(current_x, current_y, target_x, target_y)
+        
+    own_path = PathPlanner()
+    own_path.set_current_position(current_x, current_y)
+    own_path.set_target(target_x, target_y)
+    angle_from_planner = own_path.angle_to_target()
+    dist_from_planner = own_path.distance_to_target()
     
     print(f"\nDrone position: ({current_x:.1f}, {current_y:.1f})")
     print(f"Target position: ({target_x:.1f}, {target_y:.1f})")
-    print(f"Map altitude: {config.MAP_ALTITUDE}m")
-    print(f"Drone altitude: {altitude:.2f}m")
+    print(f"Map altitude: {config.MAP_ALTITUDE} U")
+    print(f"Drone altitude: {altitude:.2f} U")
     print(f"Scale factor: {scale:.3f}")
+    print(f"Angle from planner: {angle_from_planner:.2f}°")
     
     if hasattr(config, 'MAP_GSD') and config.MAP_GSD is not None:
-        dist_meters = dist_pixels * config.MAP_GSD
-        print(f"Distance: {dist_meters:.3f}m")
+        dist_meters = dist_from_planner * config.MAP_GSD
+        print(f"Distance: {dist_meters:.3f} m")
     else:
-        print(f"Distance in pixels: {dist_pixels:.1f}")
+        print(f"Distance in pixels: {dist_from_planner:.1f} px")
     
     display = locator.map_image.copy()
     
@@ -77,8 +76,8 @@ def main():
     cv2.circle(display, (int(target_x), int(target_y)), 14, (0, 255, 0), 2)
     
     h, w = display.shape[:2]
-    if w > 1200:
-        s = 1200 / w
+    if w > 900:
+        s = 900 / w
         display = cv2.resize(display, (int(w * s), int(h * s)))
     
     cv2.imshow("Route", display)

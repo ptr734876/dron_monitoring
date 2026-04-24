@@ -1,6 +1,7 @@
 # locator.py
 import cv2
 import numpy as np
+import math
 import config
 from feature_matcher import FeatureMatcher
 
@@ -23,46 +24,6 @@ class DroneLocator:
             raise FileNotFoundError(f"Не удалось загрузить карту: {map_path}")
         self.map_height, self.map_width = self.map_image_gray.shape
         self.map_kp, self.map_des = self.matcher.detect_and_compute(self.map_image)
-    
-    def _find_scale_by_ncc(self, drone_gray, x_approx, y_approx):
-        h_drone, w_drone = drone_gray.shape
-        
-        scales = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
-                  0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
-        
-        best_scale = None
-        best_score = -1
-        
-        crop_size = 300
-        x_min = max(0, int(x_approx - crop_size // 2))
-        x_max = min(self.map_width, int(x_approx + crop_size // 2))
-        y_min = max(0, int(y_approx - crop_size // 2))
-        y_max = min(self.map_height, int(y_approx + crop_size // 2))
-        
-        if x_max - x_min < 50 or y_max - y_min < 50:
-            x_min = 0
-            x_max = self.map_width
-            y_min = 0
-            y_max = self.map_height
-        
-        map_crop = self.map_image_gray[y_min:y_max, x_min:x_max]
-        
-        for scale in scales:
-            new_w = int(map_crop.shape[1] * scale)
-            new_h = int(map_crop.shape[0] * scale)
-            
-            if new_w < w_drone or new_h < h_drone:
-                continue
-            
-            map_scaled = cv2.resize(map_crop, (new_w, new_h))
-            result = cv2.matchTemplate(map_scaled, drone_gray, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, _ = cv2.minMaxLoc(result)
-            
-            if max_val > best_score:
-                best_score = max_val
-                best_scale = scale
-        
-        return best_scale, best_score
     
     def locate(self, drone_image_path):
         drone_img = cv2.imread(drone_image_path)
@@ -92,31 +53,46 @@ class DroneLocator:
         if M is None:
             return {'success': False, 'error': 'Не удалось вычислить гомографию'}
         
+        M = M / M[2, 2]
         h, w = drone_img.shape[:2]
-        center = np.float32([w / 2, h / 2]).reshape(-1, 1, 2)
-        center_on_map = cv2.perspectiveTransform(center, M)
-        x_sift, y_sift = center_on_map[0][0]
+        center_x, center_y = w / 2.0, h / 2.0
         
-        scale_ncc, conf_ncc = self._find_scale_by_ncc(drone_gray, x_sift, y_sift)
+        center_pt = np.float32([center_x, center_y]).reshape(-1, 1, 2)
+        center_map = cv2.perspectiveTransform(center_pt, M)[0][0]
+        x, y = center_map[0], center_map[1]
         
-        if scale_ncc is None:
-            scale_ncc = np.sqrt(M[0, 0]**2 + M[0, 1]**2)
-            conf_ncc = 0
+        corners_drone = np.float32([
+            [0, 0],
+            [w, 0],
+            [w, h],
+            [0, h]
+        ]).reshape(-1, 1, 2)
+        
+        corners_map = cv2.perspectiveTransform(corners_drone, M)
+        corners_map = corners_map.reshape(4, 2)
+        
+        proj_w = (math.sqrt((corners_map[1][0] - corners_map[0][0])**2 + (corners_map[1][1] - corners_map[0][1])**2) +
+                  math.sqrt((corners_map[2][0] - corners_map[3][0])**2 + (corners_map[2][1] - corners_map[3][1])**2)) / 2.0
+        
+        map_diag = math.sqrt(self.map_width**2 + self.map_height**2)
+        proj_diag = math.sqrt(proj_w**2 + (proj_w * h / w)**2)
+        
+        scale = proj_diag / map_diag
+        
+        drone_altitude = config.MAP_ALTITUDE * scale if scale and scale > 0 else None
         
         inliers_count = np.sum(mask) if mask is not None else 0
         conf_sift = inliers_count / len(matches) if matches else 0
         
-        drone_altitude = config.MAP_ALTITUDE / scale_ncc if scale_ncc > 0 else None
-        in_bounds = 0 <= x_sift < self.map_width and 0 <= y_sift < self.map_height
+        in_bounds = 0 <= x < self.map_width and 0 <= y < self.map_height
         
         return {
             'success': in_bounds,
-            'x': float(x_sift),
-            'y': float(y_sift),
-            'scale': float(scale_ncc),
+            'x': float(x),
+            'y': float(y),
+            'scale': float(scale),
             'altitude': float(drone_altitude) if drone_altitude else None,
             'confidence_sift': float(conf_sift),
-            'confidence_ncc': float(conf_ncc),
             'matches_count': len(matches),
             'inliers_count': int(inliers_count)
         }
