@@ -9,21 +9,25 @@ import config
 def main():
     map_num = ""
     dron_num = ""
-    
-    if len(sys.argv) > 1:
-        if sys.argv[1] != "-1":
-            map_num = sys.argv[1]
-    if len(sys.argv) > 2:
-        if sys.argv[2] != "-1":
-            dron_num = sys.argv[2]
-    
-    map_path = f"./photos/map{map_num}.png"
-    dron_path = f"./photos/dron{dron_num}.png"
+    if len(sys.argv) > 3:
+        map_path = [f"./photos/map{i}.png" for i in range(int(sys.argv[1]), int(sys.argv[2]))]
+        dron_path = f"./photos/dron{sys.argv[3]}.png"
+    else:
+        if len(sys.argv) > 1:
+            if sys.argv[1] != "-1":
+                map_num = sys.argv[1]
+        if len(sys.argv) > 2:
+            if sys.argv[2] != "-1":
+                dron_num = sys.argv[2]
+        map_path = f"./photos/map{map_num}.png"
+        dron_path = f"./photos/dron{dron_num}.png"
     
     locator = DroneLocator()
-    locator.load_map(map_path)
-    
-    result = locator.locate(dron_path)
+    if isinstance(map_path, str):
+        locator.load_map(map_path)
+        result = locator.locate(dron_path)
+    else:
+        result = locator.locate_on_multiple_maps(map_path, dron_path)
     
     if not result['success']:
         print(f"Location failed: {result['error']}")
@@ -33,11 +37,17 @@ def main():
     current_y = result['y']
     altitude = result['altitude']
     scale = result['scale']
+    best_map = result.get('map_index', 0)
+    
+    if isinstance(map_path, list):
+        target_map_path = map_path[best_map]
+    else:
+        target_map_path = map_path
     
     target_setter = TargetSetter()
     
     print("Set target on map (click + Enter)")
-    target_x, target_y = target_setter.set_target_from_click(map_path)
+    target_x, target_y = target_setter.set_target_from_click(target_map_path)
     if target_x is not None:
         target_setter.save_target("target.txt")
         print(f"Target set: {target_x:.1f}, {target_y:.1f}")
@@ -53,6 +63,7 @@ def main():
     
     print(f"\nDrone position: ({current_x:.1f}, {current_y:.1f})")
     print(f"Target position: ({target_x:.1f}, {target_y:.1f})")
+    print(f"Map used: {best_map + 1}")
     print(f"Map altitude: {config.MAP_ALTITUDE} U")
     print(f"Drone altitude: {altitude:.2f} U")
     print(f"Scale factor: {scale:.3f}")
